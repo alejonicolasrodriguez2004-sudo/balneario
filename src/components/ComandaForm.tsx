@@ -48,6 +48,10 @@ export const ComandaForm: React.FC<ComandaFormProps> = ({
   };
 
   const agregarProducto = (producto: ProductoDto) => {
+    if (producto.disponible_para_venta === false) {
+      setMensajeError(`El producto "${producto.nombre}" está pausado por falta de stock.`);
+      return;
+    }
     setMensajeError(null);
     setItemsCargados((prev) => {
       const idx = prev.findIndex((i) => i.producto_id === producto.id);
@@ -198,26 +202,41 @@ export const ComandaForm: React.FC<ComandaFormProps> = ({
             🍽️ 2. Seleccionar Productos
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-h-96 overflow-y-auto p-1">
-            {productos.map((prod) => (
-              <button
-                type="button"
-                key={prod.id}
-                onClick={() => agregarProducto(prod)}
-                className="p-3.5 bg-slate-50 hover:bg-teal-50 border border-slate-200 hover:border-teal-400 rounded-xl text-left transition-all flex flex-col justify-between min-h-[72px] touch-target active:scale-95"
-              >
-                <span className="font-semibold text-slate-800 leading-tight text-sm">
-                  {prod.nombre}
-                </span>
-                <div className="flex justify-between items-center mt-2 w-full">
-                  <span className="text-xs px-2 py-0.5 bg-slate-200 text-slate-600 rounded">
-                    {prod.categoria}
-                  </span>
-                  <span className="font-bold text-teal-700 text-sm">
-                    ${prod.precio_actual.toLocaleString('es-AR')}
-                  </span>
-                </div>
-              </button>
-            ))}
+            {productos.map((prod) => {
+              const estaPausado = prod.disponible_para_venta === false;
+              return (
+                <button
+                  type="button"
+                  key={prod.id}
+                  disabled={estaPausado}
+                  onClick={() => agregarProducto(prod)}
+                  className={`p-3.5 border rounded-xl text-left transition-all flex flex-col justify-between min-h-[72px] touch-target ${
+                    estaPausado
+                      ? 'bg-slate-100 border-slate-200 opacity-60 cursor-not-allowed'
+                      : 'bg-slate-50 hover:bg-teal-50 border-slate-200 hover:border-teal-400 active:scale-95'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-1 w-full">
+                    <span className="font-semibold text-slate-800 leading-tight text-sm">
+                      {prod.nombre}
+                    </span>
+                    {estaPausado && (
+                      <span className="text-[10px] uppercase tracking-wider font-bold px-1.5 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 rounded shrink-0">
+                        Agotado
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex justify-between items-center mt-2 w-full">
+                    <span className="text-xs px-2 py-0.5 bg-slate-200 text-slate-600 rounded">
+                      {prod.categoria}
+                    </span>
+                    <span className={`font-bold text-sm ${estaPausado ? 'text-slate-500 line-through' : 'text-teal-700'}`}>
+                      ${prod.precio_actual.toLocaleString('es-AR')}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -350,4 +369,3 @@ export const ComandaForm: React.FC<ComandaFormProps> = ({
     </form>
   );
 };
-

@@ -3,11 +3,12 @@ import { ComandaForm } from './components/ComandaForm';
 import { ComandaList } from './components/ComandaList';
 import { ComandaDetail } from './components/ComandaDetail';
 import { CuentasView } from './components/CuentasView';
+import { CatalogoView } from './components/CatalogoView';
 import { StartupHealthCheck } from './components/StartupHealthCheck';
-import { PlusCircle, ListFilter, UtensilsCrossed, Receipt } from 'lucide-react';
+import { PlusCircle, ListFilter, UtensilsCrossed, Receipt, BookOpen } from 'lucide-react';
 
 export const App: React.FC = () => {
-  const [vistaActiva, setVistaActiva] = useState<'nueva' | 'consultar' | 'cuentas'>('cuentas');
+  const [vistaActiva, setVistaActiva] = useState<'nueva' | 'consultar' | 'cuentas' | 'catalogo'>('catalogo');
   const [comandaSeleccionadaId, setComandaSeleccionadaId] = useState<number | null>(null);
   const [refrescoListado, setRefrescoListado] = useState(0);
   const operadorActual = 'operador_playa_1';
@@ -84,6 +85,19 @@ export const App: React.FC = () => {
               <Receipt className="w-4 h-4" />
               <span>Cuentas y Caja</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => setVistaActiva('catalogo')}
+              className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all touch-target ${
+                vistaActiva === 'catalogo'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <BookOpen className="w-4 h-4" />
+              <span>Menú y Precios</span>
+            </button>
           </div>
         </div>
       </header>
@@ -130,8 +144,13 @@ export const App: React.FC = () => {
               )}
             </div>
           </div>
-        ) : (
+        ) : vistaActiva === 'cuentas' ? (
           <CuentasView operadorActual={operadorActual} />
+        ) : (
+          <CatalogoView
+            operadorActual={operadorActual}
+            onCatalogoModificado={() => setRefrescoListado((p) => p + 1)}
+          />
         )}
       </main>
     </div>
@@ -139,4 +158,3 @@ export const App: React.FC = () => {
 };
 
 export default App;
-

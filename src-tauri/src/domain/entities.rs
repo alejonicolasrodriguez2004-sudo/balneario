@@ -19,6 +19,13 @@ pub struct Producto {
     pub categoria: String,
     pub precio_actual: f64,
     pub activo: bool,
+    #[serde(default = "default_disponible")]
+    pub disponible_para_venta: bool,
+    pub descripcion: Option<String>,
+}
+
+fn default_disponible() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -208,4 +215,3 @@ impl Comanda {
         Ok(())
     }
 }
-

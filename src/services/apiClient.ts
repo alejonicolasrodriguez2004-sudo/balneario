@@ -45,12 +45,27 @@ const mockUbicaciones = [
   { id: 'mostrador-barra', tipo: 'Mostrador' as const, numero: 1, nombre: 'Barra Principal', activo: true },
 ];
 
-const mockProductos = [
-  { id: 'licuado-frutilla', nombre: 'Licuado de Frutilla', categoria: 'Bebidas', precio_actual: 2500, activo: true },
-  { id: 'tostado-mixto', nombre: 'Tostado Mixto', categoria: 'Minutas', precio_actual: 3500, activo: true },
-  { id: 'cafe-cortado', nombre: 'Café Cortado', categoria: 'Cafetería', precio_actual: 1800, activo: true },
-  { id: 'agua-mineral', nombre: 'Agua Mineral 500ml', categoria: 'Bebidas', precio_actual: 1500, activo: true },
-  { id: 'cerveza-artesanal', nombre: 'Cerveza Tirada 500cc', categoria: 'Bebidas', precio_actual: 3200, activo: true },
+const mockCategorias: Array<any> = [
+  { id: 'bebidas', nombre: 'Bebidas', icono: 'GlassWater', orden: 1, activo: true },
+  { id: 'minutas', nombre: 'Minutas', icono: 'UtensilsCrossed', orden: 2, activo: true },
+  { id: 'cafeteria', nombre: 'Cafetería', icono: 'Coffee', orden: 3, activo: true },
+  { id: 'postres', nombre: 'Postres', icono: 'IceCream', orden: 4, activo: true },
+  { id: 'kiosco', nombre: 'Kiosco', icono: 'Candy', orden: 5, activo: true },
+];
+
+const mockProductos: Array<any> = [
+  { id: 'licuado-frutilla', nombre: 'Licuado de Frutilla', categoria: 'Bebidas', precio_actual: 2500, disponible_para_venta: true, descripcion: 'Licuado al agua o con leche de frutillas frescas', activo: true, creado_en: '2026-01-01T00:00:00Z', actualizado_en: '2026-01-01T00:00:00Z' },
+  { id: 'tostado-mixto', nombre: 'Tostado Mixto', categoria: 'Minutas', precio_actual: 3500, disponible_para_venta: true, descripcion: 'Tostado de jamón cocido y queso en pan de miga', activo: true, creado_en: '2026-01-01T00:00:00Z', actualizado_en: '2026-01-01T00:00:00Z' },
+  { id: 'cafe-cortado', nombre: 'Café Cortado', categoria: 'Cafetería', precio_actual: 1800, disponible_para_venta: true, descripcion: 'Café espresso con un toque de leche espumada', activo: true, creado_en: '2026-01-01T00:00:00Z', actualizado_en: '2026-01-01T00:00:00Z' },
+  { id: 'agua-mineral', nombre: 'Agua Mineral 500ml', categoria: 'Bebidas', precio_actual: 1500, disponible_para_venta: true, descripcion: 'Agua mineral con o sin gas', activo: true, creado_en: '2026-01-01T00:00:00Z', actualizado_en: '2026-01-01T00:00:00Z' },
+  { id: 'rabas-porcion', nombre: 'Porción de Rabas', categoria: 'Minutas', precio_actual: 7500, disponible_para_venta: true, descripcion: 'Porción de rabas crocantes con limón', activo: true, creado_en: '2026-01-01T00:00:00Z', actualizado_en: '2026-01-01T00:00:00Z' },
+  { id: 'cerveza-artesanal', nombre: 'Cerveza Tirada 500cc', categoria: 'Bebidas', precio_actual: 3200, disponible_para_venta: true, descripcion: 'Cerveza rubia Golden artesanal tirada', activo: true, creado_en: '2026-01-01T00:00:00Z', actualizado_en: '2026-01-01T00:00:00Z' },
+  { id: 'medialuna-manteca', nombre: 'Medialuna de Manteca', categoria: 'Cafetería', precio_actual: 800, disponible_para_venta: true, descripcion: 'Medialuna de manteca tradicional de la costa', activo: true, creado_en: '2026-01-01T00:00:00Z', actualizado_en: '2026-01-01T00:00:00Z' },
+];
+
+const mockHistorialPrecios: Array<any> = [
+  { id: 1, producto_id: 'licuado-frutilla', precio_anterior: 0, precio_nuevo: 2500, fecha_cambio: '2026-01-01T00:00:00Z', usuario: 'admin', motivo: 'Precio inicial' },
+  { id: 2, producto_id: 'tostado-mixto', precio_anterior: 0, precio_nuevo: 3500, fecha_cambio: '2026-01-01T00:00:00Z', usuario: 'admin', motivo: 'Precio inicial' },
 ];
 
 const mockComandas: Array<any> = [];
@@ -98,6 +113,7 @@ async function mockInvoke<T>(cmd: string, args: Record<string, any>): Promise<T>
       });
 
       const total = items.reduce((acc: number, item: any) => acc + item.subtotal, 0);
+
       const nuevaComanda = {
         id: mockComandas.length + 1,
         codigo_visible: `CMD-LOCAL-${String(mockComandas.length + 1).padStart(4, '0')}`,
@@ -328,8 +344,121 @@ async function mockInvoke<T>(cmd: string, args: Record<string, any>): Promise<T>
       } as T;
     }
 
+    // Comandos Feature 003: Catálogo de Productos y Precios
+    case 'listar_catalogo_completo': {
+      const payload = args.payload || {};
+      const cats = payload.incluir_inactivos ? mockCategorias : mockCategorias.filter((c) => c.activo);
+      const prods = payload.incluir_inactivos ? mockProductos : mockProductos.filter((p) => p.activo);
+      return { categorias: cats, productos: prods } as T;
+    }
+
+    case 'crear_producto': {
+      const payload = args.payload;
+      if (!payload.nombre || !payload.nombre.trim()) throw new Error('El nombre del producto no puede estar vacío');
+      if (payload.precio_actual <= 0) throw new Error('El precio unitario debe ser estrictamente mayor a cero');
+      const slug = payload.id || payload.nombre.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
+      if (mockProductos.some((p) => p.id === slug)) throw new Error('Ya existe un producto con esa identificación');
+      const nuevo = {
+        id: slug,
+        nombre: payload.nombre.trim(),
+        categoria: payload.categoria.trim(),
+        precio_actual: Math.round(payload.precio_actual * 100) / 100,
+        disponible_para_venta: true,
+        descripcion: payload.descripcion || null,
+        activo: true,
+        creado_en: new Date().toISOString(),
+        actualizado_en: new Date().toISOString(),
+      };
+      mockProductos.push(nuevo);
+      mockHistorialPrecios.push({
+        id: mockHistorialPrecios.length + 1,
+        producto_id: nuevo.id,
+        precio_anterior: 0,
+        precio_nuevo: nuevo.precio_actual,
+        fecha_cambio: nuevo.creado_en,
+        usuario: payload.operador || 'admin',
+        motivo: 'Precio inicial de alta',
+      });
+      return nuevo as T;
+    }
+
+    case 'actualizar_producto': {
+      const payload = args.payload;
+      const prod = mockProductos.find((p) => p.id === payload.id);
+      if (!prod) throw new Error('Producto no encontrado');
+      if (!payload.nombre || !payload.nombre.trim()) throw new Error('El nombre del producto no puede estar vacío');
+      prod.nombre = payload.nombre.trim();
+      prod.categoria = payload.categoria.trim();
+      prod.descripcion = payload.descripcion || null;
+      prod.actualizado_en = new Date().toISOString();
+      return prod as T;
+    }
+
+    case 'actualizar_precio_producto': {
+      const payload = args.payload;
+      const prod = mockProductos.find((p) => p.id === payload.producto_id);
+      if (!prod) throw new Error('Producto no encontrado');
+      if (payload.nuevo_precio <= 0) throw new Error('El precio debe ser estrictamente positivo');
+      const precioAnterior = prod.precio_actual;
+      prod.precio_actual = Math.round(payload.nuevo_precio * 100) / 100;
+      prod.actualizado_en = new Date().toISOString();
+      mockHistorialPrecios.push({
+        id: mockHistorialPrecios.length + 1,
+        producto_id: prod.id,
+        precio_anterior: precioAnterior,
+        precio_nuevo: prod.precio_actual,
+        fecha_cambio: prod.actualizado_en,
+        usuario: payload.operador || 'admin',
+        motivo: payload.motivo || 'Ajuste de precio',
+      });
+      return prod as T;
+    }
+
+    case 'cambiar_disponibilidad_producto': {
+      const payload = args.payload;
+      const prod = mockProductos.find((p) => p.id === payload.producto_id);
+      if (!prod) throw new Error('Producto no encontrado');
+      prod.disponible_para_venta = payload.disponible;
+      prod.actualizado_en = new Date().toISOString();
+      return prod as T;
+    }
+
+    case 'dar_baja_producto': {
+      const payload = args.payload;
+      const prod = mockProductos.find((p) => p.id === payload.producto_id);
+      if (!prod) throw new Error('Producto no encontrado');
+      prod.activo = false;
+      prod.disponible_para_venta = false;
+      prod.actualizado_en = new Date().toISOString();
+      return prod as T;
+    }
+
+    case 'obtener_historial_precios': {
+      const payload = args.payload;
+      const historial = mockHistorialPrecios
+        .filter((h) => h.producto_id === payload.producto_id)
+        .sort((a, b) => b.id - a.id);
+      return historial as T;
+    }
+
+    case 'listar_categorias': {
+      const payload = args.payload || {};
+      return (payload.solo_activas ? mockCategorias.filter((c) => c.activo) : mockCategorias) as T;
+    }
+
+    case 'guardar_categoria': {
+      const payload = args.payload;
+      const idx = mockCategorias.findIndex((c) => c.id === payload.id);
+      if (idx >= 0) {
+        mockCategorias[idx] = { ...payload };
+        return mockCategorias[idx] as T;
+      } else {
+        mockCategorias.push({ ...payload });
+        return payload as T;
+      }
+    }
+
     default:
       throw new Error(`Comando no reconocido: ${cmd}`);
   }
 }
-

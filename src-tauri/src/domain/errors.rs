@@ -66,6 +66,18 @@ pub enum DomainError {
     #[error("No se puede cerrar la cuenta ni liberar la ubicación porque posee saldo pendiente impago.")]
     SaldoPendiente,
 
+    #[error("El precio unitario debe ser un valor numérico mayor a cero.")]
+    PrecioInvalido,
+
+    #[error("Ya existe un producto registrado con ese identificador o nombre.")]
+    ProductoYaExiste,
+
+    #[error("El producto no se encuentra disponible para la venta actualmente (agotado/pausado).")]
+    ProductoNoDisponible,
+
+    #[error("No se encontró la categoría comercial indicada.")]
+    CategoriaNoEncontrada,
+
     #[error("Error de base de datos o almacenamiento local: {0}")]
     ErrorAlmacenamiento(String),
 
@@ -97,6 +109,10 @@ impl DomainError {
             DomainError::PagoNoEncontrado => "PAGO_NO_ENCONTRADO",
             DomainError::PagoYaCancelado => "PAGO_YA_CANCELADO",
             DomainError::SaldoPendiente => "SALDO_PENDIENTE",
+            DomainError::PrecioInvalido => "PRECIO_INVALIDO",
+            DomainError::ProductoYaExiste => "PRODUCTO_YA_EXISTE",
+            DomainError::ProductoNoDisponible => "PRODUCTO_NO_DISPONIBLE",
+            DomainError::CategoriaNoEncontrada => "CATEGORIA_NO_ENCONTRADA",
             DomainError::ErrorAlmacenamiento(_) => "ERROR_PERSISTENCIA",
             DomainError::Validacion(_) => "ERROR_VALIDACION",
         }
@@ -125,4 +141,3 @@ impl From<rusqlite::Error> for DomainError {
         DomainError::ErrorAlmacenamiento(err.to_string())
     }
 }
-

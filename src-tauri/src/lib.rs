@@ -24,6 +24,17 @@ use commands::cuentas_commands::{
     anular_cuenta,
     obtener_resumen_arqueo,
 };
+use commands::catalogo_commands::{
+    listar_catalogo_completo,
+    crear_producto,
+    actualizar_producto,
+    actualizar_precio_producto,
+    cambiar_disponibilidad_producto,
+    dar_baja_producto,
+    obtener_historial_precios,
+    listar_categorias,
+    guardar_categoria,
+};
 use storage::db::DatabaseManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -57,6 +68,15 @@ pub fn run() {
             anular_pago,
             anular_cuenta,
             obtener_resumen_arqueo,
+            listar_catalogo_completo,
+            crear_producto,
+            actualizar_producto,
+            actualizar_precio_producto,
+            cambiar_disponibilidad_producto,
+            dar_baja_producto,
+            obtener_historial_precios,
+            listar_categorias,
+            guardar_categoria,
         ])
         .run(tauri::generate_context!())
         .expect("Error al ejecutar la aplicación Tauri de Gestión de Comandas");
@@ -69,4 +89,3 @@ fn dirs_next() -> Option<std::path::PathBuf> {
         Some(std::path::PathBuf::from("./data"))
     }
 }
-

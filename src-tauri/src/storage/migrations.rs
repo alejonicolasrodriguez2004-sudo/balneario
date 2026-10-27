@@ -18,7 +18,11 @@ pub fn ejecutar_migraciones(conn: &mut Connection) -> Result<(), DomainError> {
             nombre TEXT NOT NULL,
             categoria TEXT NOT NULL,
             precio_actual REAL NOT NULL CHECK(precio_actual >= 0),
-            activo INTEGER NOT NULL DEFAULT 1 CHECK(activo IN (0, 1))
+            disponible_para_venta INTEGER NOT NULL DEFAULT 1 CHECK(disponible_para_venta IN (0, 1)),
+            descripcion TEXT,
+            activo INTEGER NOT NULL DEFAULT 1 CHECK(activo IN (0, 1)),
+            creado_en TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z',
+            actualizado_en TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z'
         );
 
         CREATE TABLE IF NOT EXISTS comandas (
@@ -157,8 +161,58 @@ pub fn ejecutar_migraciones(conn: &mut Connection) -> Result<(), DomainError> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_auditoria_pagos_cuenta_id ON auditoria_pagos(cuenta_id);
+
+        -- Tablas Feature 003: Gestión de Catálogo de Productos y Precios
+        CREATE TABLE IF NOT EXISTS categorias_referencia (
+            id TEXT PRIMARY KEY,
+            nombre TEXT NOT NULL,
+            icono TEXT,
+            orden INTEGER NOT NULL DEFAULT 0,
+            activo INTEGER NOT NULL DEFAULT 1 CHECK(activo IN (0, 1))
+        );
+
+        CREATE TABLE IF NOT EXISTS historial_precios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_id TEXT NOT NULL,
+            precio_anterior REAL NOT NULL CHECK(precio_anterior >= 0),
+            precio_nuevo REAL NOT NULL CHECK(precio_nuevo > 0),
+            fecha_cambio TEXT NOT NULL,
+            usuario TEXT NOT NULL,
+            motivo TEXT,
+            FOREIGN KEY (producto_id) REFERENCES productos_referencia(id) ON UPDATE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_historial_precios_producto ON historial_precios(producto_id);
+        CREATE INDEX IF NOT EXISTS idx_productos_categoria ON productos_referencia(categoria);
+        CREATE INDEX IF NOT EXISTS idx_productos_activo ON productos_referencia(activo);
         "
     )?;
+
+    // Migración aditiva para bases de datos existentes que tenían la tabla anterior de productos_referencia
+    let columns: Vec<String> = {
+        let mut stmt = tx.prepare("PRAGMA table_info(productos_referencia);")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+        let mut list = Vec::new();
+        for r in rows {
+            if let Ok(c) = r {
+                list.push(c);
+            }
+        }
+        list
+    };
+
+    if !columns.contains(&"disponible_para_venta".to_string()) {
+        tx.execute("ALTER TABLE productos_referencia ADD COLUMN disponible_para_venta INTEGER NOT NULL DEFAULT 1 CHECK(disponible_para_venta IN (0, 1));", [])?;
+    }
+    if !columns.contains(&"descripcion".to_string()) {
+        tx.execute("ALTER TABLE productos_referencia ADD COLUMN descripcion TEXT;", [])?;
+    }
+    if !columns.contains(&"creado_en".to_string()) {
+        tx.execute("ALTER TABLE productos_referencia ADD COLUMN creado_en TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z';", [])?;
+    }
+    if !columns.contains(&"actualizado_en".to_string()) {
+        tx.execute("ALTER TABLE productos_referencia ADD COLUMN actualizado_en TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z';", [])?;
+    }
 
     // Insertar datos semilla iniciales si las tablas de referencia están vacías
     let ubicaciones_count: i64 = tx.query_row(
@@ -180,15 +234,44 @@ pub fn ejecutar_migraciones(conn: &mut Connection) -> Result<(), DomainError> {
                 ('mesa-04', 'Mesa', 4, 'Mesa 4', 1),
                 ('reposera-05', 'Reposera', 5, 'Reposera 5', 1),
                 ('mostrador-barra', 'Mostrador', 1, 'Barra Principal', 1);
+            "
+        )?;
+    }
 
-            INSERT INTO productos_referencia (id, nombre, categoria, precio_actual, activo) VALUES
-                ('licuado-frutilla', 'Licuado de Frutilla', 'Bebidas', 2500.00, 1),
-                ('tostado-mixto', 'Tostado Mixto', 'Minutas', 3500.00, 1),
-                ('cafe-cortado', 'Café Cortado', 'Cafetería', 1800.00, 1),
-                ('agua-mineral', 'Agua Mineral 500ml', 'Bebidas', 1500.00, 1),
-                ('rabas-porcion', 'Porción de Rabas', 'Minutas', 7500.00, 1),
-                ('cerveza-artesanal', 'Cerveza Tirada 500cc', 'Bebidas', 3200.00, 1),
-                ('medialuna-manteca', 'Medialuna de Manteca', 'Cafetería', 800.00, 1);
+    let categorias_count: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM categorias_referencia;",
+        [],
+        |r| r.get(0),
+    )?;
+
+    if categorias_count == 0 {
+        tx.execute_batch(
+            "INSERT INTO categorias_referencia (id, nombre, icono, orden, activo) VALUES
+                ('bebidas', 'Bebidas', 'GlassWater', 1, 1),
+                ('minutas', 'Minutas', 'UtensilsCrossed', 2, 1),
+                ('cafeteria', 'Cafetería', 'Coffee', 3, 1),
+                ('postres', 'Postres', 'IceCream', 4, 1),
+                ('kiosco', 'Kiosco', 'Candy', 5, 1);
+            "
+        )?;
+    }
+
+    let productos_count: i64 = tx.query_row(
+        "SELECT COUNT(*) FROM productos_referencia;",
+        [],
+        |r| r.get(0),
+    )?;
+
+    if productos_count == 0 {
+        tx.execute_batch(
+            "INSERT INTO productos_referencia (id, nombre, categoria, precio_actual, disponible_para_venta, descripcion, activo, creado_en, actualizado_en) VALUES
+                ('licuado-frutilla', 'Licuado de Frutilla', 'Bebidas', 2500.00, 1, 'Licuado al agua o con leche de frutillas frescas', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+                ('tostado-mixto', 'Tostado Mixto', 'Minutas', 3500.00, 1, 'Tostado de jamón cocido y queso en pan de miga', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+                ('cafe-cortado', 'Café Cortado', 'Cafetería', 1800.00, 1, 'Café espresso con un toque de leche espumada', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+                ('agua-mineral', 'Agua Mineral 500ml', 'Bebidas', 1500.00, 1, 'Agua mineral con o sin gas', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+                ('rabas-porcion', 'Porción de Rabas', 'Minutas', 7500.00, 1, 'Porción de rabas crocantes con limón', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+                ('cerveza-artesanal', 'Cerveza Tirada 500cc', 'Bebidas', 3200.00, 1, 'Cerveza rubia Golden artesanal tirada', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z'),
+                ('medialuna-manteca', 'Medialuna de Manteca', 'Cafetería', 800.00, 1, 'Medialuna de manteca tradicional de la costa', 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z');
             "
         )?;
     }
@@ -196,4 +279,3 @@ pub fn ejecutar_migraciones(conn: &mut Connection) -> Result<(), DomainError> {
     tx.commit()?;
     Ok(())
 }
-

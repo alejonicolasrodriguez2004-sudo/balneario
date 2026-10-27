@@ -15,6 +15,8 @@ export interface ProductoDto {
   nombre: string;
   categoria: string;
   precio_actual: number;
+  disponible_para_venta?: boolean;
+  descripcion?: string | null;
   activo: boolean;
 }
 
@@ -57,13 +59,16 @@ export interface ComandaDto {
   items: ItemComandaDto[];
 }
 
-export interface ErrorDto {
-  codigo: string;
-  mensaje: string;
-  detalles?: string;
+export interface CatalogosReferenciaResponse {
+  ubicaciones: UbicacionDto[];
+  productos: ProductoDto[];
 }
 
-export type ApiResponse<T> =
-  | { success: 'true'; data: T }
-  | { success: 'false'; error: ErrorDto };
-
+export interface ApiResponse<T> {
+  success: boolean | 'true' | 'false';
+  data?: T;
+  error?: {
+    codigo: string;
+    mensaje: string;
+  };
+}

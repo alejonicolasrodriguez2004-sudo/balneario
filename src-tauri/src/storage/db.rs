@@ -69,13 +69,13 @@ impl DatabaseManager {
     }
 
     pub fn conexion_memoria() -> Result<Connection, DomainError> {
-        let conn = Connection::open_in_memory()
+        let mut conn = Connection::open_in_memory()
             .map_err(|e| DomainError::ErrorAlmacenamiento(e.to_string()))?;
         conn.execute_batch(
             "PRAGMA foreign_keys = ON;
              PRAGMA busy_timeout = 5000;"
         )?;
-        ejecutar_migraciones(&mut {conn})
+        ejecutar_migraciones(&mut conn)?;
+        Ok(conn)
     }
 }
-

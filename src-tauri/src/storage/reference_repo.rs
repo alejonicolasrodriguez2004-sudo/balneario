@@ -51,7 +51,8 @@ impl<'a> ReferenceRepository<'a> {
 
     pub fn listar_productos(&self) -> Result<Vec<Producto>, DomainError> {
         let mut stmt = self.conn.prepare(
-            "SELECT id, nombre, categoria, precio_actual, activo FROM productos_referencia WHERE activo = 1 ORDER BY categoria, nombre ASC;"
+            "SELECT id, nombre, categoria, precio_actual, activo, disponible_para_venta, descripcion 
+             FROM productos_referencia WHERE activo = 1 ORDER BY categoria, nombre ASC;"
         )?;
 
         let iter = stmt.query_map([], |row| {
@@ -61,6 +62,8 @@ impl<'a> ReferenceRepository<'a> {
                 categoria: row.get(2)?,
                 precio_actual: row.get(3)?,
                 activo: row.get::<_, i64>(4)? == 1,
+                disponible_para_venta: row.get::<_, Option<i64>>(5)?.unwrap_or(1) == 1,
+                descripcion: row.get(6)?,
             })
         })?;
 
@@ -73,7 +76,8 @@ impl<'a> ReferenceRepository<'a> {
 
     pub fn obtener_producto(&self, id: &str) -> Result<Producto, DomainError> {
         self.conn.query_row(
-            "SELECT id, nombre, categoria, precio_actual, activo FROM productos_referencia WHERE id = ?1 AND activo = 1;",
+            "SELECT id, nombre, categoria, precio_actual, activo, disponible_para_venta, descripcion 
+             FROM productos_referencia WHERE id = ?1 AND activo = 1;",
             [id],
             |row| {
                 Ok(Producto {
@@ -82,9 +86,10 @@ impl<'a> ReferenceRepository<'a> {
                     categoria: row.get(2)?,
                     precio_actual: row.get(3)?,
                     activo: row.get::<_, i64>(4)? == 1,
+                    disponible_para_venta: row.get::<_, Option<i64>>(5)?.unwrap_or(1) == 1,
+                    descripcion: row.get(6)?,
                 })
             },
         ).map_err(|_| DomainError::ProductoNoEncontrado)
     }
 }
-
