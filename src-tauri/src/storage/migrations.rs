@@ -80,6 +80,83 @@ pub fn ejecutar_migraciones(conn: &mut Connection) -> Result<(), DomainError> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_auditoria_comanda_id ON auditoria_comandas(comanda_id);
+
+        -- Tablas Feature 002: Gestión de Cuentas y Pagos
+        CREATE TABLE IF NOT EXISTS cuentas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo_visible TEXT NOT NULL UNIQUE,
+            ubicacion_id TEXT NOT NULL,
+            ubicacion_nombre TEXT NOT NULL,
+            estado TEXT NOT NULL CHECK(estado IN ('Abierta', 'Pagada', 'Cerrada', 'Anulada')),
+            total REAL NOT NULL DEFAULT 0.0 CHECK(total >= 0),
+            saldo_pendiente REAL NOT NULL DEFAULT 0.0 CHECK(saldo_pendiente >= 0),
+            creado_por TEXT NOT NULL,
+            creado_en TEXT NOT NULL,
+            cerrado_en TEXT,
+            anulado_en TEXT,
+            motivo_anulacion TEXT,
+            anulado_por TEXT,
+            FOREIGN KEY (ubicacion_id) REFERENCES ubicaciones_referencia(id) ON UPDATE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_cuentas_estado ON cuentas(estado);
+        CREATE INDEX IF NOT EXISTS idx_cuentas_ubicacion ON cuentas(ubicacion_id);
+
+        CREATE TABLE IF NOT EXISTS cuenta_comandas (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cuenta_id INTEGER NOT NULL,
+            comanda_id INTEGER NOT NULL,
+            total_comanda REAL NOT NULL CHECK(total_comanda >= 0),
+            agregado_en TEXT NOT NULL,
+            FOREIGN KEY (cuenta_id) REFERENCES cuentas(id) ON DELETE RESTRICT,
+            FOREIGN KEY (comanda_id) REFERENCES comandas(id) ON DELETE RESTRICT,
+            UNIQUE (cuenta_id, comanda_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_cuenta_comandas_cuenta_id ON cuenta_comandas(cuenta_id);
+        CREATE INDEX IF NOT EXISTS idx_cuenta_comandas_comanda_id ON cuenta_comandas(comanda_id);
+
+        CREATE TABLE IF NOT EXISTS pagos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cuenta_id INTEGER NOT NULL,
+            medio_pago TEXT NOT NULL CHECK(medio_pago IN ('Efectivo', 'Tarjeta Débito', 'Tarjeta Crédito', 'Transferencia')),
+            monto REAL NOT NULL CHECK(monto > 0),
+            monto_entregado REAL CHECK(monto_entregado >= 0),
+            vuelto REAL CHECK(vuelto >= 0),
+            referencia_externa TEXT,
+            estado TEXT NOT NULL CHECK(estado IN ('Activo', 'Cancelado')) DEFAULT 'Activo',
+            motivo_anulacion TEXT,
+            cancelado_en TEXT,
+            cancelado_por TEXT,
+            creado_por TEXT NOT NULL,
+            creado_en TEXT NOT NULL,
+            token_idempotencia TEXT UNIQUE,
+            FOREIGN KEY (cuenta_id) REFERENCES cuentas(id) ON DELETE RESTRICT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pagos_cuenta_id ON pagos(cuenta_id);
+        CREATE INDEX IF NOT EXISTS idx_pagos_estado ON pagos(estado);
+        CREATE INDEX IF NOT EXISTS idx_pagos_medio_pago ON pagos(medio_pago);
+
+        CREATE TABLE IF NOT EXISTS auditoria_pagos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cuenta_id INTEGER NOT NULL,
+            pago_id INTEGER,
+            tipo_evento TEXT NOT NULL CHECK(tipo_evento IN (
+                'APERTURA_CUENTA',
+                'PAGO_REGISTRADO',
+                'PAGO_ANULADO',
+                'CIERRE_CUENTA',
+                'ANULACION_CUENTA'
+            )),
+            descripcion TEXT NOT NULL,
+            usuario TEXT NOT NULL,
+            timestamp TEXT NOT NULL,
+            metadata_json TEXT,
+            FOREIGN KEY (cuenta_id) REFERENCES cuentas(id) ON DELETE RESTRICT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_auditoria_pagos_cuenta_id ON auditoria_pagos(cuenta_id);
         "
     )?;
 

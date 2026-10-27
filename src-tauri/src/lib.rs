@@ -14,6 +14,16 @@ use commands::comanda_commands::{
     listar_comandas,
     AppState,
 };
+use commands::cuentas_commands::{
+    abrir_cuenta,
+    obtener_cuenta,
+    listar_cuentas_activas,
+    registrar_pago,
+    cerrar_cuenta_y_liberar,
+    anular_pago,
+    anular_cuenta,
+    obtener_resumen_arqueo,
+};
 use storage::db::DatabaseManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -39,6 +49,14 @@ pub fn run() {
             cancelar_item_comanda,
             obtener_comanda,
             listar_comandas,
+            abrir_cuenta,
+            obtener_cuenta,
+            listar_cuentas_activas,
+            registrar_pago,
+            cerrar_cuenta_y_liberar,
+            anular_pago,
+            anular_cuenta,
+            obtener_resumen_arqueo,
         ])
         .run(tauri::generate_context!())
         .expect("Error al ejecutar la aplicación Tauri de Gestión de Comandas");

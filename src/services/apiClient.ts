@@ -54,6 +54,7 @@ const mockProductos = [
 ];
 
 const mockComandas: Array<any> = [];
+const mockCuentas: Array<any> = [];
 
 async function mockInvoke<T>(cmd: string, args: Record<string, any>): Promise<T> {
   await new Promise((r) => setTimeout(r, 80)); // Simula latencia ultra baja < 100ms
@@ -177,6 +178,154 @@ async function mockInvoke<T>(cmd: string, args: Record<string, any>): Promise<T>
       item.motivo_cancelacion = payload.motivo.trim();
       c.total -= item.subtotal;
       return c as T;
+    }
+
+    case 'abrir_cuenta': {
+      const payload = args.payload;
+      const u = mockUbicaciones.find((ub) => ub.id === payload.ubicacion_id);
+      if (!u) throw new Error('Ubicación no encontrada');
+      const comandas = mockComandas.filter((c) => c.ubicacion_id === payload.ubicacion_id && c.estado === 'Abierta');
+      if (comandas.length === 0) throw new Error('No hay comandas pendientes para liquidar en esta ubicación');
+      const total = comandas.reduce((acc, c) => acc + c.total, 0);
+      const cuenta = {
+        id: (mockCuentas.length + 1),
+        codigo_visible: `CTA-LOCAL-${String(mockCuentas.length + 1).padStart(4, '0')}`,
+        ubicacion_id: u.id,
+        ubicacion_nombre: u.nombre,
+        estado: 'Abierta',
+        total,
+        saldo_pendiente: total,
+        creado_por: payload.operador || 'Operador',
+        creado_en: new Date().toISOString(),
+        comandas_asociadas: comandas.map((c) => ({ comanda_id: c.id, codigo_visible: c.codigo_visible, total: c.total })),
+        pagos: [],
+      };
+      mockCuentas.push(cuenta);
+      return cuenta as T;
+    }
+
+    case 'obtener_cuenta': {
+      const payload = args.payload;
+      const c = mockCuentas.find((x) => x.id === payload.cuenta_id);
+      if (!c) throw new Error('Cuenta no encontrada');
+      return c as T;
+    }
+
+    case 'listar_cuentas_activas': {
+      return mockCuentas.filter((c) => c.estado === 'Abierta' || c.estado === 'Pagada') as T;
+    }
+
+    case 'registrar_pago': {
+      const payload = args.payload;
+      const c = mockCuentas.find((x) => x.id === payload.cuenta_id);
+      if (!c) throw new Error('Cuenta no encontrada');
+      if (payload.monto <= 0) throw new Error('El monto debe ser positivo');
+      if (payload.monto > c.saldo_pendiente + 0.01) throw new Error('El monto excede el saldo pendiente');
+
+      let vuelto = 0;
+      if (payload.medio_pago === 'Efectivo' && payload.monto_entregado) {
+        if (payload.monto_entregado < payload.monto) throw new Error('El monto entregado es menor al monto a pagar');
+        vuelto = Math.round((payload.monto_entregado - payload.monto) * 100) / 100;
+      }
+
+      const nuevoPago = {
+        id: c.pagos.length + 1,
+        cuenta_id: c.id,
+        medio_pago: payload.medio_pago,
+        monto: payload.monto,
+        monto_entregado: payload.monto_entregado || null,
+        vuelto: vuelto || null,
+        referencia_externa: payload.referencia_externa || null,
+        estado: 'Activo',
+        creado_por: payload.operador || 'Operador',
+        creado_en: new Date().toISOString(),
+      };
+      c.pagos.push(nuevoPago);
+      c.saldo_pendiente = Math.max(0, Math.round((c.saldo_pendiente - payload.monto) * 100) / 100);
+      if (c.saldo_pendiente === 0) c.estado = 'Pagada';
+
+      return {
+        cuenta_actualizada: c,
+        pago_registrado: nuevoPago,
+        vuelto_a_entregar: vuelto,
+      } as T;
+    }
+
+    case 'cerrar_cuenta_y_liberar': {
+      const payload = args.payload;
+      const c = mockCuentas.find((x) => x.id === payload.cuenta_id);
+      if (!c) throw new Error('Cuenta no encontrada');
+      if (c.saldo_pendiente > 0.01) throw new Error('No se puede cerrar una cuenta con saldo pendiente');
+      c.estado = 'Cerrada';
+      c.cerrado_en = new Date().toISOString();
+      return c as T;
+    }
+
+    case 'anular_pago': {
+      const payload = args.payload;
+      const c = mockCuentas.find((x) => x.id === payload.cuenta_id);
+      if (!c) throw new Error('Cuenta no encontrada');
+      const p = c.pagos.find((x: any) => x.id === payload.pago_id);
+      if (!p) throw new Error('Pago no encontrado');
+      if (payload.motivo.trim().length < 4) throw new Error('Motivo obligatorio (mínimo 4 caracteres)');
+      p.estado = 'Cancelado';
+      p.motivo_anulacion = payload.motivo.trim();
+      p.cancelado_por = payload.operador;
+      p.cancelado_en = new Date().toISOString();
+
+      const totalActivo = c.pagos
+        .filter((x: any) => x.estado === 'Activo')
+        .reduce((acc: number, x: any) => acc + x.monto, 0);
+      c.saldo_pendiente = Math.round((c.total - totalActivo) * 100) / 100;
+      c.estado = c.saldo_pendiente === 0 ? 'Pagada' : 'Abierta';
+      return c as T;
+    }
+
+    case 'anular_cuenta': {
+      const payload = args.payload;
+      const c = mockCuentas.find((x) => x.id === payload.cuenta_id);
+      if (!c) throw new Error('Cuenta no encontrada');
+      const pagosActivos = c.pagos.filter((x: any) => x.estado === 'Activo');
+      if (pagosActivos.length > 0) throw new Error('No se puede anular una cuenta con pagos activos');
+      if (payload.motivo.trim().length < 4) throw new Error('Motivo obligatorio');
+      c.estado = 'Anulada';
+      c.motivo_anulacion = payload.motivo.trim();
+      c.anulado_por = payload.operador;
+      c.anulado_en = new Date().toISOString();
+      return c as T;
+    }
+
+    case 'obtener_resumen_arqueo': {
+      let efectivo = 0;
+      let debito = 0;
+      let credito = 0;
+      let transf = 0;
+      let activos = 0;
+      let anulados = 0;
+
+      for (const c of mockCuentas) {
+        for (const p of c.pagos) {
+          if (p.estado === 'Activo') {
+            activos++;
+            if (p.medio_pago === 'Efectivo') efectivo += p.monto;
+            else if (p.medio_pago === 'Tarjeta Débito') debito += p.monto;
+            else if (p.medio_pago === 'Tarjeta Crédito') credito += p.monto;
+            else if (p.medio_pago === 'Transferencia') transf += p.monto;
+          } else {
+            anulados++;
+          }
+        }
+      }
+
+      return {
+        total_efectivo: efectivo,
+        total_debito: debito,
+        total_credito: credito,
+        total_transferencia: transf,
+        total_recaudado: efectivo + debito + credito + transf,
+        cantidad_pagos_activos: activos,
+        cantidad_pagos_anulados: anulados,
+      } as T;
     }
 
     default:
