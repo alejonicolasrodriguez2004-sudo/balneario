@@ -185,11 +185,65 @@ pub fn ejecutar_migraciones(conn: &mut Connection) -> Result<(), DomainError> {
         CREATE INDEX IF NOT EXISTS idx_historial_precios_producto ON historial_precios(producto_id);
         CREATE INDEX IF NOT EXISTS idx_productos_categoria ON productos_referencia(categoria);
         CREATE INDEX IF NOT EXISTS idx_productos_activo ON productos_referencia(activo);
+
+        -- Tablas Feature 004: Gestión de Turnos de Caja, Arqueo Ciego y Sangrías
+        CREATE TABLE IF NOT EXISTS turnos_caja (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo_visible TEXT NOT NULL UNIQUE,
+            operador_apertura TEXT NOT NULL,
+            fondo_inicial REAL NOT NULL CHECK(fondo_inicial >= 0),
+            fecha_apertura TEXT NOT NULL,
+            estado TEXT NOT NULL CHECK(estado IN ('Abierto', 'Cerrado')),
+            operador_cierre TEXT,
+            fecha_cierre TEXT,
+            observaciones_cierre TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_turnos_estado ON turnos_caja(estado);
+        CREATE INDEX IF NOT EXISTS idx_turnos_fecha_apertura ON turnos_caja(fecha_apertura);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_un_solo_turno_abierto ON turnos_caja(estado) WHERE estado = 'Abierto';
+
+        CREATE TABLE IF NOT EXISTS retiros_caja (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            turno_id INTEGER NOT NULL,
+            monto REAL NOT NULL CHECK(monto > 0),
+            operador TEXT NOT NULL,
+            receptor TEXT NOT NULL,
+            motivo TEXT NOT NULL,
+            creado_en TEXT NOT NULL,
+            FOREIGN KEY (turno_id) REFERENCES turnos_caja(id) ON DELETE RESTRICT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_retiros_turno_id ON retiros_caja(turno_id);
+        CREATE INDEX IF NOT EXISTS idx_retiros_creado_en ON retiros_caja(creado_en);
+
+        CREATE TABLE IF NOT EXISTS arqueos_cierre (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            turno_id INTEGER NOT NULL UNIQUE,
+            esperado_efectivo REAL NOT NULL,
+            declarado_efectivo REAL NOT NULL CHECK(declarado_efectivo >= 0),
+            diferencia_efectivo REAL NOT NULL,
+            esperado_debito REAL NOT NULL,
+            declarado_debito REAL NOT NULL CHECK(declarado_debito >= 0),
+            diferencia_debito REAL NOT NULL,
+            esperado_credito REAL NOT NULL,
+            declarado_credito REAL NOT NULL CHECK(declarado_credito >= 0),
+            diferencia_credito REAL NOT NULL,
+            esperado_transferencia REAL NOT NULL,
+            declarado_transferencia REAL NOT NULL CHECK(declarado_transferencia >= 0),
+            diferencia_transferencia REAL NOT NULL,
+            diferencia_total REAL NOT NULL,
+            justificacion TEXT,
+            creado_en TEXT NOT NULL,
+            FOREIGN KEY (turno_id) REFERENCES turnos_caja(id) ON DELETE RESTRICT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_arqueos_turno_id ON arqueos_cierre(turno_id);
         "
     )?;
 
-    // Migración aditiva para bases de datos existentes que tenían la tabla anterior de productos_referencia
-    let columns: Vec<String> = {
+    // Migración aditiva para productos_referencia
+    let prod_columns: Vec<String> = {
         let mut stmt = tx.prepare("PRAGMA table_info(productos_referencia);")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
         let mut list = Vec::new();
@@ -201,17 +255,35 @@ pub fn ejecutar_migraciones(conn: &mut Connection) -> Result<(), DomainError> {
         list
     };
 
-    if !columns.contains(&"disponible_para_venta".to_string()) {
+    if !prod_columns.contains(&"disponible_para_venta".to_string()) {
         tx.execute("ALTER TABLE productos_referencia ADD COLUMN disponible_para_venta INTEGER NOT NULL DEFAULT 1 CHECK(disponible_para_venta IN (0, 1));", [])?;
     }
-    if !columns.contains(&"descripcion".to_string()) {
+    if !prod_columns.contains(&"descripcion".to_string()) {
         tx.execute("ALTER TABLE productos_referencia ADD COLUMN descripcion TEXT;", [])?;
     }
-    if !columns.contains(&"creado_en".to_string()) {
+    if !prod_columns.contains(&"creado_en".to_string()) {
         tx.execute("ALTER TABLE productos_referencia ADD COLUMN creado_en TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z';", [])?;
     }
-    if !columns.contains(&"actualizado_en".to_string()) {
+    if !prod_columns.contains(&"actualizado_en".to_string()) {
         tx.execute("ALTER TABLE productos_referencia ADD COLUMN actualizado_en TEXT NOT NULL DEFAULT '2026-01-01T00:00:00Z';", [])?;
+    }
+
+    // Migración aditiva para pagos (agregar turno_id si no existe)
+    let pagos_columns: Vec<String> = {
+        let mut stmt = tx.prepare("PRAGMA table_info(pagos);")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(1))?;
+        let mut list = Vec::new();
+        for r in rows {
+            if let Ok(c) = r {
+                list.push(c);
+            }
+        }
+        list
+    };
+
+    if !pagos_columns.contains(&"turno_id".to_string()) {
+        tx.execute("ALTER TABLE pagos ADD COLUMN turno_id INTEGER REFERENCES turnos_caja(id) ON DELETE RESTRICT;", [])?;
+        tx.execute("CREATE INDEX IF NOT EXISTS idx_pagos_turno_id ON pagos(turno_id);", [])?;
     }
 
     // Insertar datos semilla iniciales si las tablas de referencia están vacías

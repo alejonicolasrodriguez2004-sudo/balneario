@@ -4,11 +4,12 @@ import { ComandaList } from './components/ComandaList';
 import { ComandaDetail } from './components/ComandaDetail';
 import { CuentasView } from './components/CuentasView';
 import { CatalogoView } from './components/CatalogoView';
+import { TurnosView } from './components/TurnosView';
 import { StartupHealthCheck } from './components/StartupHealthCheck';
-import { PlusCircle, ListFilter, UtensilsCrossed, Receipt, BookOpen } from 'lucide-react';
+import { PlusCircle, ListFilter, UtensilsCrossed, Receipt, BookOpen, ShieldCheck } from 'lucide-react';
 
 export const App: React.FC = () => {
-  const [vistaActiva, setVistaActiva] = useState<'nueva' | 'consultar' | 'cuentas' | 'catalogo'>('catalogo');
+  const [vistaActiva, setVistaActiva] = useState<'nueva' | 'consultar' | 'cuentas' | 'catalogo' | 'turnos'>('turnos');
   const [comandaSeleccionadaId, setComandaSeleccionadaId] = useState<number | null>(null);
   const [refrescoListado, setRefrescoListado] = useState(0);
   const operadorActual = 'operador_playa_1';
@@ -30,7 +31,7 @@ export const App: React.FC = () => {
 
       {/* Barra de Navegación Principal */}
       <header className="bg-white border-b border-slate-200 shadow-sm sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col md:flex-row justify-between items-center gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-teal-600 flex items-center justify-center text-white shadow-md shadow-teal-600/20">
               <UtensilsCrossed className="w-6 h-6" />
@@ -46,11 +47,24 @@ export const App: React.FC = () => {
           </div>
 
           {/* Selector de Pestañas / Vistas */}
-          <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+          <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setVistaActiva('turnos')}
+              className={`px-3.5 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all touch-target ${
+                vistaActiva === 'turnos'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>Turnos y Caja</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setVistaActiva('nueva')}
-              className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all touch-target ${
+              className={`px-3.5 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all touch-target ${
                 vistaActiva === 'nueva'
                   ? 'bg-teal-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -63,7 +77,7 @@ export const App: React.FC = () => {
             <button
               type="button"
               onClick={() => setVistaActiva('consultar')}
-              className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all touch-target ${
+              className={`px-3.5 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all touch-target ${
                 vistaActiva === 'consultar'
                   ? 'bg-slate-800 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -76,20 +90,20 @@ export const App: React.FC = () => {
             <button
               type="button"
               onClick={() => setVistaActiva('cuentas')}
-              className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all touch-target ${
+              className={`px-3.5 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all touch-target ${
                 vistaActiva === 'cuentas'
-                  ? 'bg-emerald-600 text-white shadow-sm'
+                  ? 'bg-sky-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <Receipt className="w-4 h-4" />
-              <span>Cuentas y Caja</span>
+              <span>Cuentas y Cobros</span>
             </button>
 
             <button
               type="button"
               onClick={() => setVistaActiva('catalogo')}
-              className={`px-4 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all touch-target ${
+              className={`px-3.5 py-2 rounded-lg font-bold text-xs flex items-center gap-2 transition-all touch-target ${
                 vistaActiva === 'catalogo'
                   ? 'bg-amber-600 text-white shadow-sm'
                   : 'text-slate-600 hover:text-slate-900'
@@ -103,8 +117,10 @@ export const App: React.FC = () => {
       </header>
 
       {/* Contenido Principal */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4">
-        {vistaActiva === 'nueva' ? (
+      <main className="flex-1 max-w-7xl w-full mx-auto p-4 flex flex-col">
+        {vistaActiva === 'turnos' ? (
+          <TurnosView operadorActual={operadorActual} />
+        ) : vistaActiva === 'nueva' ? (
           <div>
             <div className="mb-4">
               <h2 className="text-xl font-black text-slate-900">Tomar Nuevo Pedido</h2>

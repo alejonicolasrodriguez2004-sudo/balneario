@@ -35,6 +35,15 @@ use commands::catalogo_commands::{
     listar_categorias,
     guardar_categoria,
 };
+use commands::turnos_commands::{
+    obtener_estado_turno_actual,
+    abrir_turno_caja,
+    registrar_retiro_caja,
+    cerrar_turno_arqueo_ciego,
+    listar_historial_turnos,
+    obtener_detalle_turno,
+    generar_comprobante_impresion_turno,
+};
 use storage::db::DatabaseManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -77,6 +86,13 @@ pub fn run() {
             obtener_historial_precios,
             listar_categorias,
             guardar_categoria,
+            obtener_estado_turno_actual,
+            abrir_turno_caja,
+            registrar_retiro_caja,
+            cerrar_turno_arqueo_ciego,
+            listar_historial_turnos,
+            obtener_detalle_turno,
+            generar_comprobante_impresion_turno,
         ])
         .run(tauri::generate_context!())
         .expect("Error al ejecutar la aplicación Tauri de Gestión de Comandas");

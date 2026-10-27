@@ -71,6 +71,52 @@ const mockHistorialPrecios: Array<any> = [
 const mockComandas: Array<any> = [];
 const mockCuentas: Array<any> = [];
 
+interface MockTurno {
+  id: number;
+  codigo_visible: string;
+  operador_apertura: string;
+  fondo_inicial: number;
+  fecha_apertura: string;
+  estado: 'Abierto' | 'Cerrado';
+  operador_cierre: string | null;
+  fecha_cierre: string | null;
+  observaciones_cierre: string | null;
+}
+
+interface MockRetiro {
+  id: number;
+  turno_id: number;
+  monto: number;
+  operador: string;
+  receptor: string;
+  motivo: string;
+  creado_en: string;
+}
+
+interface MockArqueo {
+  id: number;
+  turno_id: number;
+  esperado_efectivo: number;
+  declarado_efectivo: number;
+  diferencia_efectivo: number;
+  esperado_debito: number;
+  declarado_debito: number;
+  diferencia_debito: number;
+  esperado_credito: number;
+  declarado_credito: number;
+  diferencia_credito: number;
+  esperado_transferencia: number;
+  declarado_transferencia: number;
+  diferencia_transferencia: number;
+  diferencia_total: number;
+  justificacion: string | null;
+  creado_en: string;
+}
+
+const mockTurnos: Array<MockTurno> = [];
+const mockRetiros: Array<MockRetiro> = [];
+const mockArqueos: Array<MockArqueo> = [];
+
 async function mockInvoke<T>(cmd: string, args: Record<string, any>): Promise<T> {
   await new Promise((r) => setTimeout(r, 80)); // Simula latencia ultra baja < 100ms
 
@@ -244,6 +290,7 @@ async function mockInvoke<T>(cmd: string, args: Record<string, any>): Promise<T>
         vuelto = Math.round((payload.monto_entregado - payload.monto) * 100) / 100;
       }
 
+      const turnoActivo = mockTurnos.find((t) => t.estado === 'Abierto');
       const nuevoPago = {
         id: c.pagos.length + 1,
         cuenta_id: c.id,
@@ -255,6 +302,7 @@ async function mockInvoke<T>(cmd: string, args: Record<string, any>): Promise<T>
         estado: 'Activo',
         creado_por: payload.operador || 'Operador',
         creado_en: new Date().toISOString(),
+        turno_id: turnoActivo ? turnoActivo.id : null,
       };
       c.pagos.push(nuevoPago);
       c.saldo_pendiente = Math.max(0, Math.round((c.saldo_pendiente - payload.monto) * 100) / 100);
@@ -324,11 +372,11 @@ async function mockInvoke<T>(cmd: string, args: Record<string, any>): Promise<T>
           if (p.estado === 'Activo') {
             activos++;
             if (p.medio_pago === 'Efectivo') efectivo += p.monto;
-            else if (p.medio_pago === 'Tarjeta Débito') debito += p.monto;
-            else if (p.medio_pago === 'Tarjeta Crédito') credito += p.monto;
-            else if (p.medio_pago === 'Transferencia') transf += p.monto;
+            if (p.medio_pago === 'Tarjeta Débito') debito += p.monto;
+            if (p.medio_pago === 'Tarjeta Crédito') credito += p.monto;
+            if (p.medio_pago === 'Transferencia') transf += p.monto;
           } else {
-            anulados++;
+            anurados++;
           }
         }
       }
@@ -344,25 +392,28 @@ async function mockInvoke<T>(cmd: string, args: Record<string, any>): Promise<T>
       } as T;
     }
 
-    // Comandos Feature 003: Catálogo de Productos y Precios
-    case 'listar_catalogo_completo': {
+    case 'listar_productos': {
       const payload = args.payload || {};
-      const cats = payload.incluir_inactivos ? mockCategorias : mockCategorias.filter((c) => c.activo);
-      const prods = payload.incluir_inactivos ? mockProductos : mockProductos.filter((p) => p.activo);
-      return { categorias: cats, productos: prods } as T;
+      let list = [...mockProductos];
+      if (payload.solo_disponibles) {
+        list = list.filter((p) => p.disponible_para_venta && p.activo);
+      }
+      if (payload.categoria) {
+        list = list.filter((p) => p.categoria.toLowerCase() === payload.categoria.toLowerCase());
+      }
+      return list as T;
     }
 
     case 'crear_producto': {
       const payload = args.payload;
       if (!payload.nombre || !payload.nombre.trim()) throw new Error('El nombre del producto no puede estar vacío');
-      if (payload.precio_actual <= 0) throw new Error('El precio unitario debe ser estrictamente mayor a cero');
-      const slug = payload.id || payload.nombre.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
-      if (mockProductos.some((p) => p.id === slug)) throw new Error('Ya existe un producto con esa identificación');
+      if (payload.precio <= 0) throw new Error('El precio debe ser estrictamente positivo');
+      const id = payload.nombre.toLowerCase().replace(/[^a-z0-9]/g, '-');
       const nuevo = {
-        id: slug,
+        id,
         nombre: payload.nombre.trim(),
         categoria: payload.categoria.trim(),
-        precio_actual: Math.round(payload.precio_actual * 100) / 100,
+        precio_actual: Math.round(payload.precio * 100) / 100,
         disponible_para_venta: true,
         descripcion: payload.descripcion || null,
         activo: true,
@@ -372,7 +423,7 @@ async function mockInvoke<T>(cmd: string, args: Record<string, any>): Promise<T>
       mockProductos.push(nuevo);
       mockHistorialPrecios.push({
         id: mockHistorialPrecios.length + 1,
-        producto_id: nuevo.id,
+        producto_id: id,
         precio_anterior: 0,
         precio_nuevo: nuevo.precio_actual,
         fecha_cambio: nuevo.creado_en,
@@ -456,6 +507,332 @@ async function mockInvoke<T>(cmd: string, args: Record<string, any>): Promise<T>
         mockCategorias.push({ ...payload });
         return payload as T;
       }
+    }
+
+    // Comandos Feature 004: Gestión de Turnos de Caja y Arqueo Ciego
+    case 'obtener_estado_turno_actual': {
+      const turno = mockTurnos.find((t) => t.estado === 'Abierto') || null;
+      const cuentasPendientes = mockCuentas.filter((c) => c.estado === 'Abierta').length;
+
+      if (!turno) {
+        return {
+          turno_abierto: null,
+          efectivo_en_gaveta: 0,
+          total_cobrado_efectivo: 0,
+          total_cobrado_debito: 0,
+          total_cobrado_credito: 0,
+          total_cobrado_transferencia: 0,
+          total_recaudado: 0,
+          total_retiros: 0,
+          cantidad_cobros: 0,
+          cantidad_retiros: 0,
+          cuentas_abiertas_pendientes: cuentasPendientes,
+        } as T;
+      }
+
+      let cobrosEf = 0;
+      let cobrosDeb = 0;
+      let cobrosCre = 0;
+      let cobrosTra = 0;
+      let cantCobros = 0;
+
+      for (const cu of mockCuentas) {
+        for (const p of cu.pagos || []) {
+          if (p.estado === 'Activo' && (p.turno_id === turno.id || (!p.turno_id && turno.estado === 'Abierto'))) {
+            cantCobros++;
+            if (p.medio_pago === 'Efectivo') cobrosEf += p.monto;
+            else if (p.medio_pago === 'Tarjeta Débito' || p.medio_pago === 'TarjetaDebito') cobrosDeb += p.monto;
+            else if (p.medio_pago === 'Tarjeta Crédito' || p.medio_pago === 'TarjetaCredito') cobrosCre += p.monto;
+            else if (p.medio_pago === 'Transferencia') cobrosTra += p.monto;
+          }
+        }
+      }
+
+      const retirosTurno = mockRetiros.filter((r) => r.turno_id === turno.id);
+      const totalRetiros = retirosTurno.reduce((acc, r) => acc + r.monto, 0);
+      const efectivoGaveta = Math.round((turno.fondo_inicial + cobrosEf - totalRetiros) * 100) / 100;
+      const totalRecaudado = Math.round((cobrosEf + cobrosDeb + cobrosCre + cobrosTra) * 100) / 100;
+
+      return {
+        turno_abierto: turno,
+        efectivo_en_gaveta: efectivoGaveta,
+        total_cobrado_efectivo: Math.round(cobrosEf * 100) / 100,
+        total_cobrado_debito: Math.round(cobrosDeb * 100) / 100,
+        total_cobrado_credito: Math.round(cobrosCre * 100) / 100,
+        total_cobrado_transferencia: Math.round(cobrosTra * 100) / 100,
+        total_recaudado: totalRecaudado,
+        total_retiros: Math.round(totalRetiros * 100) / 100,
+        cantidad_cobros: cantCobros,
+        cantidad_retiros: retirosTurno.length,
+        cuentas_abiertas_pendientes: cuentasPendientes,
+      } as T;
+    }
+
+    case 'abrir_turno_caja': {
+      const payload = args.payload;
+      const abiertoExistente = mockTurnos.find((t) => t.estado === 'Abierto');
+      if (abiertoExistente) {
+        throw new Error('Ya existe un turno de caja abierto en la terminal. Debe cerrarse antes de iniciar uno nuevo.');
+      }
+      if (payload.fondo_inicial < 0) {
+        throw new Error('El fondo inicial de caja no puede ser negativo.');
+      }
+      if (!payload.operador || !payload.operador.trim()) {
+        throw new Error('El operador de apertura es obligatorio.');
+      }
+
+      const hoy = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      const countHoy = mockTurnos.filter((t) => t.fecha_apertura.startsWith(new Date().toISOString().slice(0, 10))).length;
+      const codigo = `TUR-${hoy}-${String(countHoy + 1).padStart(4, '0')}`;
+      const nuevoTurno: MockTurno = {
+        id: mockTurnos.length + 1,
+        codigo_visible: codigo,
+        operador_apertura: payload.operador.trim(),
+        fondo_inicial: Math.round(payload.fondo_inicial * 100) / 100,
+        fecha_apertura: new Date().toISOString(),
+        estado: 'Abierto',
+        operador_cierre: null,
+        fecha_cierre: null,
+        observaciones_cierre: null,
+      };
+      mockTurnos.push(nuevoTurno);
+      return nuevoTurno as T;
+    }
+
+    case 'registrar_retiro_caja': {
+      const payload = args.payload;
+      const turno = mockTurnos.find((t) => t.estado === 'Abierto');
+      if (!turno) {
+        throw new Error('No existe un turno de caja abierto para registrar la operación.');
+      }
+      if (payload.monto <= 0) {
+        throw new Error('El monto debe ser un importe positivo mayor a cero.');
+      }
+      if (!payload.operador?.trim() || !payload.receptor?.trim()) {
+        throw new Error('Operador y receptor son obligatorios.');
+      }
+      if (!payload.motivo || payload.motivo.trim().length < 4) {
+        throw new Error('Debe ingresar obligatoriamente un motivo justificado (mínimo 4 caracteres).');
+      }
+
+      let cobrosEf = 0;
+      for (const cu of mockCuentas) {
+        for (const p of cu.pagos || []) {
+          if (p.estado === 'Activo' && (p.turno_id === turno.id || (!p.turno_id && turno.estado === 'Abierto'))) {
+            if (p.medio_pago === 'Efectivo') cobrosEf += p.monto;
+          }
+        }
+      }
+      const retirosPrevios = mockRetiros
+        .filter((r) => r.turno_id === turno.id)
+        .reduce((acc, r) => acc + r.monto, 0);
+      const disponible = turno.fondo_inicial + cobrosEf - retirosPrevios;
+
+      if (payload.monto > disponible + 0.01) {
+        throw new Error('El monto solicitado supera el efectivo actualmente disponible en la gaveta.');
+      }
+
+      const nuevoRetiro: MockRetiro = {
+        id: mockRetiros.length + 1,
+        turno_id: turno.id,
+        monto: Math.round(payload.monto * 100) / 100,
+        operador: payload.operador.trim(),
+        receptor: payload.receptor.trim(),
+        motivo: payload.motivo.trim(),
+        creado_en: new Date().toISOString(),
+      };
+      mockRetiros.push(nuevoRetiro);
+      return nuevoRetiro as T;
+    }
+
+    case 'cerrar_turno_arqueo_ciego': {
+      const payload = args.payload;
+      const turno = mockTurnos.find((t) => t.estado === 'Abierto');
+      if (!turno) {
+        throw new Error('No existe un turno de caja abierto para cerrar.');
+      }
+
+      let cobrosEf = 0;
+      let cobrosDeb = 0;
+      let cobrosCre = 0;
+      let cobrosTra = 0;
+
+      for (const cu of mockCuentas) {
+        for (const p of cu.pagos || []) {
+          if (p.estado === 'Activo' && (p.turno_id === turno.id || (!p.turno_id && turno.estado === 'Abierto'))) {
+            if (p.medio_pago === 'Efectivo') cobrosEf += p.monto;
+            else if (p.medio_pago === 'Tarjeta Débito' || p.medio_pago === 'TarjetaDebito') cobrosDeb += p.monto;
+            else if (p.medio_pago === 'Tarjeta Crédito' || p.medio_pago === 'TarjetaCredito') cobrosCre += p.monto;
+            else if (p.medio_pago === 'Transferencia') cobrosTra += p.monto;
+          }
+        }
+      }
+
+      const retiros = mockRetiros.filter((r) => r.turno_id === turno.id);
+      const totalRetiros = retiros.reduce((acc, r) => acc + r.monto, 0);
+      const esperadoEf = Math.round((turno.fondo_inicial + cobrosEf - totalRetiros) * 100) / 100;
+      const declaradoEf = Math.round((payload.declarado_efectivo || 0) * 100) / 100;
+      const difEf = Math.round((declaradoEf - esperadoEf) * 100) / 100;
+
+      const esperadoDeb = Math.round(cobrosDeb * 100) / 100;
+      const declaradoDeb = Math.round((payload.declarado_debito || 0) * 100) / 100;
+      const difDeb = Math.round((declaradoDeb - esperadoDeb) * 100) / 100;
+
+      const esperadoCre = Math.round(cobrosCre * 100) / 100;
+      const declaradoCre = Math.round((payload.declarado_credito || 0) * 100) / 100;
+      const difCre = Math.round((declaradoCre - esperadoCre) * 100) / 100;
+
+      const esperadoTra = Math.round(cobrosTra * 100) / 100;
+      const declaradoTra = Math.round((payload.declarado_transferencia || 0) * 100) / 100;
+      const difTra = Math.round((declaradoTra - esperadoTra) * 100) / 100;
+
+      const difTotal = Math.round((difEf + difDeb + difCre + difTra) * 100) / 100;
+
+      if (Math.abs(difEf) > 1000 && (!payload.justificacion || !payload.justificacion.trim())) {
+        throw new Error('Debe ingresar obligatoriamente una justificación por discrepancia de caja superior a $1.000.');
+      }
+
+      const timestamp = new Date().toISOString();
+      turno.estado = 'Cerrado';
+      turno.operador_cierre = payload.operador || 'Cajero';
+      turno.fecha_cierre = timestamp;
+      turno.observaciones_cierre = payload.observaciones || null;
+
+      const nuevoArqueo: MockArqueo = {
+        id: mockArqueos.length + 1,
+        turno_id: turno.id,
+        esperado_efectivo: esperadoEf,
+        declarado_efectivo: declaradoEf,
+        diferencia_efectivo: difEf,
+        esperado_debito: esperadoDeb,
+        declarado_debito: declaradoDeb,
+        diferencia_debito: difDeb,
+        esperado_credito: esperadoCre,
+        declarado_credito: declaradoCre,
+        diferencia_credito: difCre,
+        esperado_transferencia: esperadoTra,
+        declarado_transferencia: declaradoTra,
+        diferencia_transferencia: difTra,
+        diferencia_total: difTotal,
+        justificacion: payload.justificacion?.trim() || null,
+        creado_en: timestamp,
+      };
+      mockArqueos.push(nuevoArqueo);
+
+      const detalleCompleto = {
+        turno: { ...turno },
+        arqueo: nuevoArqueo,
+        retiros: [...retiros],
+        resumen_medios_pago: {
+          efectivo: cobrosEf,
+          debito: cobrosDeb,
+          credito: cobrosCre,
+          transferencia: cobrosTra,
+          total: Math.round((cobrosEf + cobrosDeb + cobrosCre + cobrosTra) * 100) / 100,
+        },
+      };
+
+      return detalleCompleto as T;
+    }
+
+    case 'listar_historial_turnos': {
+      return [...mockTurnos].reverse() as T;
+    }
+
+    case 'obtener_detalle_turno': {
+      const payload = args.payload;
+      const turno = mockTurnos.find((t) => t.id === payload.turno_id);
+      if (!turno) throw new Error('Turno no encontrado');
+
+      const arqueo = mockArqueos.find((a) => a.turno_id === turno.id) || null;
+      const retiros = mockRetiros.filter((r) => r.turno_id === turno.id);
+
+      let cobrosEf = 0;
+      let cobrosDeb = 0;
+      let cobrosCre = 0;
+      let cobrosTra = 0;
+
+      for (const cu of mockCuentas) {
+        for (const p of cu.pagos || []) {
+          if (p.estado === 'Activo' && (p.turno_id === turno.id || (!p.turno_id && turno.estado === 'Abierto'))) {
+            if (p.medio_pago === 'Efectivo') cobrosEf += p.monto;
+            else if (p.medio_pago === 'Tarjeta Débito' || p.medio_pago === 'TarjetaDebito') cobrosDeb += p.monto;
+            else if (p.medio_pago === 'Tarjeta Crédito' || p.medio_pago === 'TarjetaCredito') cobrosCre += p.monto;
+            else if (p.medio_pago === 'Transferencia') cobrosTra += p.monto;
+          }
+        }
+      }
+
+      return {
+        turno: { ...turno },
+        arqueo,
+        retiros,
+        resumen_medios_pago: {
+          efectivo: Math.round(cobrosEf * 100) / 100,
+          debito: Math.round(cobrosDeb * 100) / 100,
+          credito: Math.round(cobrosCre * 100) / 100,
+          transferencia: Math.round(cobrosTra * 100) / 100,
+          total: Math.round((cobrosEf + cobrosDeb + cobrosCre + cobrosTra) * 100) / 100,
+        },
+      } as T;
+    }
+
+    case 'generar_comprobante_impresion_turno': {
+      const payload = args.payload;
+      const turno = mockTurnos.find((t) => t.id === payload.turno_id);
+      if (!turno) throw new Error('Turno no encontrado');
+      const arqueo = mockArqueos.find((a) => a.turno_id === turno.id);
+      const retiros = mockRetiros.filter((r) => r.turno_id === turno.id);
+
+      let cobrosEf = 0;
+      let cobrosDeb = 0;
+      let cobrosCre = 0;
+      let cobrosTra = 0;
+      for (const cu of mockCuentas) {
+        for (const p of cu.pagos || []) {
+          if (p.estado === 'Activo' && (p.turno_id === turno.id || (!p.turno_id && turno.estado === 'Abierto'))) {
+            if (p.medio_pago === 'Efectivo') cobrosEf += p.monto;
+            else if (p.medio_pago === 'Tarjeta Débito' || p.medio_pago === 'TarjetaDebito') cobrosDeb += p.monto;
+            else if (p.medio_pago === 'Tarjeta Crédito' || p.medio_pago === 'TarjetaCredito') cobrosCre += p.monto;
+            else if (p.medio_pago === 'Transferencia') cobrosTra += p.monto;
+          }
+        }
+      }
+      const totalCobrado = cobrosEf + cobrosDeb + cobrosCre + cobrosTra;
+      const totalRetiros = retiros.reduce((acc, r) => acc + r.monto, 0);
+
+      const sep = '='.repeat(48);
+      const sepS = '-'.repeat(48);
+      let s = `${sep}\n          BALNEARIO - CIERRE DE TURNO           \n${sep}\n`;
+      s += `Turno: ${turno.codigo_visible.padEnd(18)} Estado: ${turno.estado.toUpperCase().padEnd(10)}\n`;
+      s += `Cajero Apertura: ${turno.operador_apertura}\n`;
+      s += `Inicio: ${turno.fecha_apertura}\n`;
+      if (turno.fecha_cierre) s += `Cierre: ${turno.fecha_cierre}\n`;
+      if (turno.operador_cierre) s += `Cajero Cierre:   ${turno.operador_cierre}\n`;
+      s += `${sepS}\nRECAUDACIÓN POR MEDIO DE COBRO:\n`;
+      s += `  Efectivo:                   $${cobrosEf.toFixed(2).padStart(14)}\n`;
+      s += `  Tarjeta Débito:             $${cobrosDeb.toFixed(2).padStart(14)}\n`;
+      s += `  Tarjeta Crédito:            $${cobrosCre.toFixed(2).padStart(14)}\n`;
+      s += `  Transferencia / QR:         $${cobrosTra.toFixed(2).padStart(14)}\n`;
+      s += `${sepS}\nTOTAL COBRADO EN TURNO:       $${totalCobrado.toFixed(2).padStart(14)}\n${sepS}\n`;
+      s += `MOVIMIENTO DE EFECTIVO EN GAVETA:\n`;
+      s += `  (+) Fondo Inicial:          $${turno.fondo_inicial.toFixed(2).padStart(14)}\n`;
+      s += `  (+) Cobros en Efectivo:     $${cobrosEf.toFixed(2).padStart(14)}\n`;
+      s += `  (-) Retiros / Sangrías (${retiros.length}): -$${totalRetiros.toFixed(2).padStart(13)}\n`;
+
+      if (arqueo) {
+        s += `${sepS}\n`;
+        s += `EFECTIVO TEÓRICO ESPERADO:    $${arqueo.esperado_efectivo.toFixed(2).padStart(14)}\n`;
+        s += `EFECTIVO REAL DECLARADO:      $${arqueo.declarado_efectivo.toFixed(2).padStart(14)}\n`;
+        s += `${sepS}\n`;
+        const resStr = arqueo.diferencia_efectivo === 0 ? 'EXACTO (0.00)' : arqueo.diferencia_efectivo > 0 ? 'SOBRANTE (+)' : 'FALTANTE (-)';
+        s += `RESULTADO ARQUEO EFECTIVO:    $${arqueo.diferencia_efectivo.toFixed(2).padStart(14)} (${resStr})\n`;
+        if (arqueo.justificacion) {
+          s += `Justificación: ${arqueo.justificacion}\n`;
+        }
+      }
+      s += `${sep}\n\nFirma Cajero:    ___________________________\n\nFirma Supervisor: ___________________________\n${sep}\n`;
+      return s as T;
     }
 
     default:

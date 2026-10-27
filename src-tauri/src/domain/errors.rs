@@ -78,6 +78,25 @@ pub enum DomainError {
     #[error("No se encontró la categoría comercial indicada.")]
     CategoriaNoEncontrada,
 
+    // Errores Feature 004: Gestión de Turnos de Caja y Arqueo Ciego
+    #[error("Ya existe un turno de caja abierto en la terminal. Debe cerrarse antes de iniciar uno nuevo.")]
+    TurnoYaAbierto,
+
+    #[error("No existe un turno de caja abierto para registrar la operación.")]
+    NoHayTurnoAbierto,
+
+    #[error("El turno de caja ya se encuentra cerrado de forma definitiva.")]
+    TurnoYaCerrado,
+
+    #[error("El monto solicitado supera el efectivo actualmente disponible en la gaveta.")]
+    SaldoInsuficienteEnGaveta,
+
+    #[error("Debe ingresar obligatoriamente una justificación por discrepancia de caja superior a $1.000.")]
+    JustificacionRequerida,
+
+    #[error("El fondo inicial de caja no puede ser negativo.")]
+    FondoInicialInvalido,
+
     #[error("Error de base de datos o almacenamiento local: {0}")]
     ErrorAlmacenamiento(String),
 
@@ -113,6 +132,12 @@ impl DomainError {
             DomainError::ProductoYaExiste => "PRODUCTO_YA_EXISTE",
             DomainError::ProductoNoDisponible => "PRODUCTO_NO_DISPONIBLE",
             DomainError::CategoriaNoEncontrada => "CATEGORIA_NO_ENCONTRADA",
+            DomainError::TurnoYaAbierto => "TURNO_YA_ABIERTO",
+            DomainError::NoHayTurnoAbierto => "NO_HAY_TURNO_ABIERTO",
+            DomainError::TurnoYaCerrado => "TURNO_YA_CERRADO",
+            DomainError::SaldoInsuficienteEnGaveta => "SALDO_INSUFICIENTE_EN_GAVETA",
+            DomainError::JustificacionRequerida => "JUSTIFICACION_REQUERIDA",
+            DomainError::FondoInicialInvalido => "FONDO_INICIAL_INVALIDO",
             DomainError::ErrorAlmacenamiento(_) => "ERROR_PERSISTENCIA",
             DomainError::Validacion(_) => "ERROR_VALIDACION",
         }

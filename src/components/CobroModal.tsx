@@ -1,10 +1,11 @@
 // src/components/CobroModal.tsx
 // Modal táctil ergonómico para cobro multimedio y cálculo de vuelto (Feature 002)
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DollarSign, CreditCard, ArrowLeftRight, Check, X, AlertTriangle } from 'lucide-react';
 import { CuentaDto, MedioPago, RegistrarPagoResponse } from '../types/cuentas';
 import { cuentasApi } from '../services/cuentasApi';
+import { turnosApi } from '../services/turnosApi';
 
 interface CobroModalProps {
   cuenta: CuentaDto;
@@ -29,6 +30,21 @@ export const CobroModal: React.FC<CobroModalProps> = ({
   const [referencia, setReferencia] = useState<string>('');
   const [procesando, setProcesando] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [sinTurnoAbierto, setSinTurnoAbierto] = useState<boolean>(false);
+
+  useEffect(() => {
+    const verificarTurno = async () => {
+      try {
+        const est = await turnosApi.obtenerEstadoTurnoActual();
+        if (!est.turno_abierto) {
+          setSinTurnoAbierto(true);
+        }
+      } catch {
+        // En caso de error de verificación, no bloquear
+      }
+    };
+    verificarTurno();
+  }, []);
 
   // Vuelto dinámico en tiempo real
   const vuelto =
@@ -119,6 +135,16 @@ export const CobroModal: React.FC<CobroModalProps> = ({
 
         {/* Formulario */}
         <form onSubmit={handleConfirmarPago} className="p-5 flex-1 overflow-y-auto space-y-4">
+          {/* Advertencia sin turno de caja abierto (Feature 004, T034) */}
+          {sinTurnoAbierto && (
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold">Aviso de Caja:</span> No hay un turno de caja abierto en esta terminal. Este cobro se registrará pero no quedará vinculado a una gaveta activa.
+              </div>
+            </div>
+          )}
+
           {errorMsg && (
             <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0" />
@@ -138,7 +164,7 @@ export const CobroModal: React.FC<CobroModalProps> = ({
                 className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition ${
                   medioPago === 'Efectivo'
                     ? 'border-emerald-600 bg-emerald-50 text-emerald-900 shadow-sm'
-                    : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
                 }`}
               >
                 <DollarSign className="w-4 h-4 text-emerald-600" />
@@ -150,12 +176,12 @@ export const CobroModal: React.FC<CobroModalProps> = ({
                 onClick={() => setMedioPago('Tarjeta Débito')}
                 className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition ${
                   medioPago === 'Tarjeta Débito'
-                    ? 'border-indigo-600 bg-indigo-50 text-indigo-900 shadow-sm'
-                    : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                    ? 'border-sky-600 bg-sky-50 text-sky-900 shadow-sm'
+                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                <CreditCard className="w-4 h-4 text-indigo-600" />
-                Débito
+                <CreditCard className="w-4 h-4 text-sky-600" />
+                Tarjeta Débito
               </button>
 
               <button
@@ -163,12 +189,12 @@ export const CobroModal: React.FC<CobroModalProps> = ({
                 onClick={() => setMedioPago('Tarjeta Crédito')}
                 className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition ${
                   medioPago === 'Tarjeta Crédito'
-                    ? 'border-blue-600 bg-blue-50 text-blue-900 shadow-sm'
-                    : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                    ? 'border-indigo-600 bg-indigo-50 text-indigo-900 shadow-sm'
+                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                <CreditCard className="w-4 h-4 text-blue-600" />
-                Crédito
+                <CreditCard className="w-4 h-4 text-indigo-600" />
+                Tarjeta Crédito
               </button>
 
               <button
@@ -177,7 +203,7 @@ export const CobroModal: React.FC<CobroModalProps> = ({
                 className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition ${
                   medioPago === 'Transferencia'
                     ? 'border-purple-600 bg-purple-50 text-purple-900 shadow-sm'
-                    : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                    : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'
                 }`}
               >
                 <ArrowLeftRight className="w-4 h-4 text-purple-600" />
@@ -186,25 +212,27 @@ export const CobroModal: React.FC<CobroModalProps> = ({
             </div>
           </div>
 
-          {/* Importe a Imputar */}
+          {/* Importe a cobrar */}
           <div>
             <div className="flex justify-between items-center mb-1">
-              <label className="text-xs font-bold text-slate-700">Monto a Cobrar ($)</label>
+              <label className="text-xs font-bold text-slate-700">
+                Importe a Imputar ($)
+              </label>
               <button
                 type="button"
                 onClick={() => {
                   setMonto(cuenta.saldo_pendiente);
                   if (medioPago === 'Efectivo') setMontoEntregado(cuenta.saldo_pendiente);
                 }}
-                className="text-[11px] font-bold text-teal-600 hover:underline"
+                className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 underline"
               >
-                Cobrar Total (${cuenta.saldo_pendiente})
+                Cobrar Total (${cuenta.saldo_pendiente.toLocaleString('es-AR')})
               </button>
             </div>
             <input
               type="number"
-              step="0.01"
-              min="0.01"
+              step="any"
+              min="1"
               max={cuenta.saldo_pendiente}
               value={monto || ''}
               onChange={(e) => {
@@ -214,38 +242,39 @@ export const CobroModal: React.FC<CobroModalProps> = ({
                   setMontoEntregado(val);
                 }
               }}
+              className="w-full text-lg font-black px-4 py-2.5 rounded-xl border border-slate-300 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-600 outline-none text-slate-800"
               required
-              className="w-full text-lg font-black px-4 py-2.5 rounded-xl border border-slate-300 focus:border-teal-600 focus:ring-2 focus:ring-teal-600/20 outline-none"
             />
           </div>
 
-          {/* Opciones especiales para Efectivo (Monto entregado y vuelto) */}
+          {/* Cálculo de Efectivo y Vuelto */}
           {medioPago === 'Efectivo' && (
-            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
               <div>
                 <label className="text-xs font-bold text-slate-700 block mb-1">
                   Monto Entregado por el Cliente ($)
                 </label>
                 <input
                   type="number"
-                  step="0.01"
+                  step="any"
                   min={monto}
                   value={montoEntregado || ''}
                   onChange={(e) => setMontoEntregado(parseFloat(e.target.value) || 0)}
-                  className="w-full text-base font-black px-3.5 py-2 rounded-lg border border-slate-300 focus:border-emerald-600 outline-none bg-white"
+                  className="w-full text-base font-bold px-3 py-2 rounded-lg border border-slate-300 focus:border-emerald-600 outline-none"
+                  required
                 />
               </div>
 
-              {/* Botones de billetes rápidos */}
+              {/* Botones de efectivo rápido */}
               <div>
-                <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block mb-1.5">
-                  Billetes Rápidos:
+                <span className="text-[10px] uppercase font-bold text-slate-400 block mb-1.5">
+                  Billetes Comunes
                 </span>
                 <div className="flex flex-wrap gap-1.5">
-                  {[monto, 1000, 2000, 5000, 10000, 20000].map((val, idx) => (
+                  {[1000, 2000, 5000, 10000, 20000].map((val) => (
                     <button
-                      key={idx}
                       type="button"
+                      key={val}
                       onClick={() => handleMontoRapidoEfectivo(val)}
                       className="px-2.5 py-1 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 hover:border-emerald-500 hover:bg-emerald-50 transition"
                     >
@@ -309,4 +338,3 @@ export const CobroModal: React.FC<CobroModalProps> = ({
     </div>
   );
 };
-

@@ -2,7 +2,7 @@
 // Repositorio transaccional de Cuentas, Pagos y Arqueo de Caja (Feature 002)
 
 use chrono::Utc;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::str::FromStr;
 
 use crate::domain::cuentas::{ComandaEnCuenta, Cuenta, CuentaDetallada, EstadoCuenta};
@@ -337,12 +337,21 @@ impl<'a> CuentasRepository<'a> {
             saldo_pendiente,
         )?;
 
-        // Insertar pago
+        // Obtener turno activo si existe para vincular el cobro (Feature 004, FR-003)
+        let turno_id_activo: Option<i64> = tx
+            .query_row(
+                "SELECT id FROM turnos_caja WHERE estado = 'Abierto' LIMIT 1;",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+
+        // Insertar pago vinculado al turno
         tx.execute(
             "INSERT INTO pagos (
                 cuenta_id, medio_pago, monto, monto_entregado, vuelto,
-                referencia_externa, estado, creado_por, creado_en, token_idempotencia
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'Activo', ?7, ?8, ?9);",
+                referencia_externa, estado, creado_por, creado_en, token_idempotencia, turno_id
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'Activo', ?7, ?8, ?9, ?10);",
             params![
                 cuenta_id,
                 pago.medio_pago.to_string(),
@@ -353,6 +362,7 @@ impl<'a> CuentasRepository<'a> {
                 pago.creado_por,
                 pago.creado_en,
                 token_idempotencia,
+                turno_id_activo,
             ],
         )?;
 
@@ -693,4 +703,3 @@ impl<'a> CuentasRepository<'a> {
         Ok(resumen)
     }
 }
-
